@@ -1,7 +1,7 @@
 """Application settings loaded from environment variables"""
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -27,10 +27,24 @@ class Settings(BaseSettings):
     # Deployment
     deployment_retries: int = Field(default=3, alias="DEPLOYMENT_RETRIES")
 
+    # Debug
+    debug: bool = Field(default=False, alias="DEBUG")
+
     # Upload limits
     max_upload_size_mb: int = Field(default=20, alias="MAX_UPLOAD_SIZE_MB")
 
     model_config = {"env_file": ".env", "populate_by_name": True}
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "production", "prod"}:
+                return False
+            if normalized in {"debug", "development", "dev"}:
+                return True
+        return value
 
 
 settings = Settings()

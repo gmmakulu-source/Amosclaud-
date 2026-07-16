@@ -1,13 +1,19 @@
-"""FastAPI entry point for Amoscloud AI.
+"""
+Amoscloud AI - FastAPI web application entry point.
 
-Serves the build-assistant web UI and exposes endpoints for generating
-implementation plans from either plain-text instructions or uploaded images.
+Endpoints
+---------
+GET  /                   -> web UI (HTML)
+POST /build/photo        -> build from uploaded image
+POST /build/instructions -> build from text instructions
+GET  /health             -> health check
 """
 
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from src.amoscloud_ai.builder import BuilderService
@@ -22,6 +28,12 @@ app = FastAPI(
 )
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+# Mount static web files so the web UI is accessible at /static
+_WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+if _WEB_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_WEB_DIR)), name="static")
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 builder_service = BuilderService()
 
