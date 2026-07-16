@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .engineering_loop import AutonomousEngineeringLoop, LoopOutcome
+from .model import AutonomousModelGateway
+from .react_integration import AutonomousReactController
+from .react_loop import ReactOutcome
 from src.foundation import AgentsPracticeStation, IntelligentFoundation
 from src.services.code_analyzer import CodeAnalyzer
 from src.services.file_manager import SafeFileManager
@@ -27,7 +31,7 @@ class AutonomousTask:
 
 
 class AutonomousOrchestrator:
-    """One intelligent coordinator for UI, API, webhooks, jobs, agents, and lessons."""
+    """One coordinator for UI, API, webhooks, jobs, agents, and lessons."""
 
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace.resolve()
@@ -37,6 +41,7 @@ class AutonomousOrchestrator:
         self.runtime = RuntimeExecutor(self.workspace)
         self.foundation = IntelligentFoundation(self.workspace)
         self.practice_station = AgentsPracticeStation(self.workspace)
+        self.react = AutonomousReactController(self.workspace)
         self.engineering_loop = AutonomousEngineeringLoop(
             analyzer=self.analyzer,
             model=self.model,
@@ -122,6 +127,17 @@ class AutonomousOrchestrator:
 
     def run(self, task: AutonomousTask) -> LoopOutcome | ReactOutcome:
         if task.mode.lower() == "react" or bool(task.metadata.get("use_react")):
+    def run_react(self, task: AutonomousTask) -> ReactOutcome:
+        """Run Reason-Act-Observe-Verify beneath this same orchestrator."""
+        guidance_modes = {"answer", "guide", "learn", "teach"}
+        return self.react.run(
+            task.objective,
+            authorized_writes=task.authorized_writes,
+            execution_required=task.mode not in guidance_modes,
+        )
+
+    def run(self, task: AutonomousTask) -> LoopOutcome | ReactOutcome:
+        if task.mode in {"react", "answer", "guide", "learn", "teach"}:
             return self.run_react(task)
 
         level = int(task.metadata.get("academy_level", 1))
@@ -157,6 +173,13 @@ class AutonomousOrchestrator:
                 (
                     f"Practice Station: {practice.lesson}; score {practice.score}; "
                     f"status {practice.status}."
+                (
+                    f"Foundation confidence: {context.confidence}; "
+                    f"risk: {context.risk}."
+                ),
+                (
+                    f"Practice Station: {practice.lesson}; score "
+                    f"{practice.score}; status {practice.status}."
                 ),
             ]
         )
