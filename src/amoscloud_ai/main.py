@@ -21,16 +21,13 @@ from src.amoscloud_ai.config import settings
 from src.amoscloud_ai.logger import log
 from src.amoscloud_ai.models import BuildResult, BuildStatus
 
-# ---------------------------------------------------------------------------
-# App setup
-# ---------------------------------------------------------------------------
-
 app = FastAPI(
     title="Amoscloud AI",
     description="Build projects from photo uploads or text instructions.",
     version="1.0.0",
 )
 
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 # Mount static web files so the web UI is accessible at /static
 _WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 if _WEB_DIR.exists():
@@ -41,11 +38,6 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 builder_service = BuilderService()
 
 _MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -59,11 +51,10 @@ async def build_from_photo(
     photo: UploadFile = File(..., description="Image file (PNG, JPEG, GIF, WebP)"),
     instructions: str = Form(default="", description="Optional additional instructions"),
 ) -> BuildResult:
-    """
-    Build from an uploaded photo/screenshot.
+    """Build a project plan from an uploaded photo or screenshot.
 
-    The image is sent to Claude's vision model which generates a full project
-    plan and implementation outline.
+    The uploaded image is analyzed by the Claude vision model and converted
+    into a structured implementation plan and outline.
     """
     content_type = photo.content_type or ""
     if not content_type.startswith("image/"):
@@ -96,11 +87,10 @@ async def build_from_instructions(
     instructions: str = Form(..., description="What you want to build"),
     context: str = Form(default="", description="Optional project context"),
 ) -> BuildResult:
-    """
-    Build from plain-text instructions.
+    """Build a project plan from plain-text instructions.
 
-    The instructions are sent to Claude which generates a full project plan
-    and implementation outline.
+    The instructions are sent to Claude to produce a concise plan and an
+    implementation outline that can be acted on immediately.
     """
     if not instructions.strip():
         return BuildResult(
@@ -122,10 +112,6 @@ async def health() -> dict:
     """Health check used by Docker and load balancers."""
     return {"status": "healthy", "service": "amoscloud-ai"}
 
-
-# ---------------------------------------------------------------------------
-# Dev server entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
