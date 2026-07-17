@@ -216,6 +216,8 @@
       body: JSON.stringify({
         mode, objective, branch: 'main',
         metadata: {
+          branch: 'main', use_agent: agentMode, apply_changes: mode === 'fix',
+          source: 'platform-agent-console', previous_objective: previousObjective,
           branch: 'main', use_agent: false, apply_changes: mode === 'fix',
           source: 'platform-autonomous-chat', previous_objective: previousObjective,
           conversation: conversation.slice(-12), autonomous_mode_selection: true,
@@ -237,12 +239,19 @@
     controller = new AbortController();
     setBusy(true, 'receiving');
     try {
+      const data = await sendAutonomous(mode, objective);
       let data = await sendAutonomous(mode, objective);
       const isConversation = String(data.pipeline_id || '').startsWith('conversation-');
       if (isConversation && objective.length > 2) {
         previousObjective = objective;
         sessionStorage.setItem('amosclaud-agent-previous-objective', previousObjective);
       }
+      setPhase(board, 1, 'complete', isConversation ? 'Conversation context understood' : 'Evidence inspected');
+      setPhase(board, 2, 'complete', isConversation ? 'Guidance plan completed' : (mode === 'autonomous-check' ? 'Inspection plan completed' : 'Safe plan prepared'));
+      setPhase(board, 3, 'complete', isConversation ? 'No write action required' : (mode === 'fix' ? 'Authorized changes processed' : 'Execution processed without write authorization'));
+      setPhase(board, 4, data.status === 'failed' ? 'failed' : 'complete', data.status === 'failed' ? 'Verification found a blocker' : 'Verification passed');
+      setPhase(board, 5, 'complete', 'Evidence reported');
+      renderResult(data, board);
       if (isConversation) {
         board.remove();
         addMessage(data.reply, 'agent');

@@ -105,6 +105,18 @@ EXECUTION_PHRASES = {
     "build it",
     "begin building",
 }
+ACTION_WORDS = {
+    "build", "create", "fix", "change", "delete", "deploy", "commit", "merge",
+    "run", "test", "verify", "inspect", "monitor", "review", "publish",
+}
+EXECUTION_PHRASES = {
+    "do it", "proceed", "apply the fix", "make the changes", "execute", "start building",
+    "start to build", "now start to build", "start the build", "build it", "begin building",
+}
+FOLLOW_UP_EXECUTION = {
+    "do it", "proceed", "start", "start now", "build it", "fix it", "deploy it",
+    "now start to build", "start to build", "start building", "make it", "continue",
+}
 FOLLOW_UP_EXECUTION = EXECUTION_PHRASES | {
     "start",
     "start now",
@@ -180,11 +192,27 @@ def _resolve_follow_up(objective: str, metadata: dict | None) -> tuple[str, bool
     return current, False
 
 
+def _normalise(value: str) -> str:
+    return " ".join((value or "").lower().rstrip(".!?").split())
+
+
+def _resolve_follow_up(objective: str, metadata: dict | None) -> tuple[str, bool]:
+    """Attach a short execution follow-up to the previous conversational objective."""
+    current = objective.strip()
+    normalised = _normalise(current)
+    prepared = dict(metadata or {})
+    previous = str(prepared.get("previous_objective") or "").strip()
+    if previous and (normalised in FOLLOW_UP_EXECUTION or any(phrase == normalised for phrase in EXECUTION_PHRASES)):
+        return f"Build the previously discussed outcome: {previous}", True
+    return current, False
+
+
 def _is_guidance_request(message: str, mode: str) -> bool:
     normalised = " ".join(message.lower().split())
     if not normalised:
         return False
     explicitly_execute = any(phrase in normalised for phrase in EXECUTION_PHRASES)
+    asks_for_guidance = "?" in message or any(phrase in normalised for phrase in GUIDANCE_PHRASES)
     asks_for_guidance = (
         "?" in message
         or normalised.startswith(QUESTION_PREFIXES)
@@ -340,6 +368,7 @@ async def run_agent(
     run_id = str(uuid.uuid4())
     supplied_objective = (body.objective or "").strip()
     objective, continued = _resolve_follow_up(supplied_objective, body.metadata)
+    conversational_reply = None if continued else _conversation_reply(request, mode, objective)
     intake_reply = None if continued else _project_intake_reply(request, objective, body.metadata)
     conversational_reply = intake_reply or (None if continued else _conversation_reply(request, mode, objective))
     if conversational_reply:
@@ -363,6 +392,9 @@ async def run_agent(
     pipeline_id = str(uuid.uuid4())
     objective = objective or f"{AGENT_HOME} autonomous operations"
     execution_mode, metadata = _agent_metadata(mode, body.metadata)
+    if continued:
+        metadata["conversation_continuation"] = True
+        metadata["original_follow_up"] = supplied_objective
     conversation = _conversation_messages(body.metadata)
     if conversation:
         metadata["conversation_brief"] = conversation
