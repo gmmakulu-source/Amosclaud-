@@ -14,6 +14,13 @@ from src.services.code_analyzer import CodeAnalyzer
 from src.services.file_manager import SafeFileManager
 from src.services.runtime_exec import RuntimeExecutor
 
+from .engineering_loop import AutonomousEngineeringLoop, LoopOutcome
+from .model import AutonomousModelGateway
+from .observations import Observation
+from .react_loop import AutonomousReactLoop, ReactOutcome
+from .react_tools import build_react_registry
+from .reasoning import ActionRequest, ReactDecision
+
 
 @dataclass
 class AutonomousTask:
@@ -43,6 +50,83 @@ class AutonomousOrchestrator:
             max_attempts=2,
         )
 
+    @staticmethod
+    def _react_execution_required(task: AutonomousTask) -> bool:
+        return task.mode.lower() not in {"answer", "guide", "plan", "explain"}
+
+    def _react_decision_provider(self, task: AutonomousTask):
+        execution_required = self._react_execution_required(task)
+
+        def decide(
+            objective: str,
+            observations: list[Observation],
+            step: int,
+        ) -> ReactDecision:
+            del step
+            if not observations:
+                if not execution_required:
+                    return ReactDecision(
+                        kind="finish",
+                        reason="Guidance request does not require tool execution.",
+                        answer=(
+                            f"Amosclaud Autonomous understood: {objective}. "
+                            "A safe plan can be prepared without modifying the workspace."
+                        ),
+                    )
+                return ReactDecision(
+                    kind="act",
+                    reason="Inspect repository evidence before taking further action.",
+                    action=ActionRequest(
+                        tool="inspect_repository",
+                        purpose="Establish verified repository context.",
+                    ),
+                )
+
+            latest = observations[-1]
+            if not latest.success:
+                return ReactDecision(
+                    kind="blocked",
+                    reason=latest.summary,
+                    answer="The mission stopped because verified evidence failed.",
+                )
+
+            if not any(item.tool == "verify_runtime" for item in observations):
+                return ReactDecision(
+                    kind="act",
+                    reason="Verify the current workspace before reporting success.",
+                    action=ActionRequest(
+                        tool="verify_runtime",
+                        purpose="Produce compile and test evidence.",
+                    ),
+                )
+
+            return ReactDecision(
+                kind="finish",
+                reason="Required evidence was collected and verified.",
+                answer=(
+                    "Amosclaud Autonomous completed the governed ReAct cycle: "
+                    "reason, act, observe, and verify."
+                ),
+            )
+
+        return decide
+
+    def run_react(self, task: AutonomousTask) -> ReactOutcome:
+        """Run ReAct as a governed engine beneath the main Autonomous."""
+        registry = build_react_registry(self.workspace)
+        react = AutonomousReactLoop(
+            registry,
+            self._react_decision_provider(task),
+            max_steps=int(task.metadata.get("react_max_steps", 8)),
+        )
+        return react.run(
+            task.objective,
+            authorized_writes=task.authorized_writes,
+            execution_required=self._react_execution_required(task),
+        )
+
+    def run(self, task: AutonomousTask) -> LoopOutcome | ReactOutcome:
+        if task.mode.lower() == "react" or bool(task.metadata.get("use_react")):
     def run_react(self, task: AutonomousTask) -> ReactOutcome:
         """Run Reason-Act-Observe-Verify beneath this same orchestrator."""
         guidance_modes = {"answer", "guide", "learn", "teach"}
@@ -85,6 +169,10 @@ class AutonomousOrchestrator:
         )
         outcome.lessons.extend(
             [
+                f"Foundation confidence: {context.confidence}; risk: {context.risk}.",
+                (
+                    f"Practice Station: {practice.lesson}; score {practice.score}; "
+                    f"status {practice.status}."
                 (
                     f"Foundation confidence: {context.confidence}; "
                     f"risk: {context.risk}."
